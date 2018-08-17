@@ -138,6 +138,12 @@
                                  "         --region ", { "Ref" : "AWS::Region" }, "\n"
                               ]]}
                       }                  
+        },
+        "CreationPolicy": {
+          "ResourceSignal": {
+            "Count": "1",
+            "Timeout": "PT5M"
+          }
         }
       },
   
