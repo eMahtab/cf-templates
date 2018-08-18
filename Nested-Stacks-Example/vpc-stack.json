@@ -1,0 +1,102 @@
+{
+    "Description": "An AWS VPC with 1 subnet.",
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Parameters": {
+		"VPCCIDR": {
+			"Description": "VPC CIDR Range",
+			"Type": "String"
+		},
+		"SubnetCIDR": {
+			"Description": "Subnet A CIDR",
+			"Type": "String"
+		}
+	},
+    "Resources": {
+       "VPC": {
+          "Type": "AWS::EC2::VPC",
+          "Properties": {
+             "CidrBlock": {"Ref" : "VPCCIDR"},
+             "EnableDnsSupport": true,
+             "EnableDnsHostnames": true,
+             "InstanceTenancy": "default",
+             "Tags" : [ {"Key" : "Name", "Value" : "demo-vpc"} ]
+          }
+       },
+       "InternetGateway": {
+          "Type": "AWS::EC2::InternetGateway"
+       },
+       "VPCGatewayAttachment": {
+          "Type": "AWS::EC2::VPCGatewayAttachment",
+          "Properties": {
+             "VpcId": { "Ref" : "VPC" },
+             "InternetGatewayId": { "Ref" : "InternetGateway" }
+          }
+       },
+       "SubnetA": {
+          "Type": "AWS::EC2::Subnet",
+          "Properties": {
+             "VpcId": { "Ref" : "VPC" },
+             "CidrBlock": { "Ref" : "SubnetCIDR" },
+             "MapPublicIpOnLaunch": true
+          }
+       },
+       "RouteTable": {
+          "Type": "AWS::EC2::RouteTable",
+          "Properties": {
+             "VpcId": { "Ref" : "VPC" }
+          }
+       },
+       "InternetRoute": {
+          "Type": "AWS::EC2::Route",
+          "DependsOn": "InternetGateway",
+          "Properties": {
+             "DestinationCidrBlock": "0.0.0.0/0",
+             "GatewayId": { "Ref" : "InternetGateway" },
+             "RouteTableId": { "Ref" : "RouteTable" }
+          }
+       },
+       "SubnetARouteTableAssociation": {
+          "Type": "AWS::EC2::SubnetRouteTableAssociation",
+          "Properties": {
+             "RouteTableId": { "Ref" : "RouteTable" },
+             "SubnetId": { "Ref" : "SubnetA" }
+          }
+       },
+       "SecurityGroup": {
+        "Type": "AWS::EC2::SecurityGroup",
+        "Properties": {
+           "GroupName": "Internet Group",
+           "GroupDescription": "SSH traffic in, all traffic out.",
+           "VpcId": { "Ref" : "VPC" },
+           "SecurityGroupIngress": [
+              {
+                 "IpProtocol": "tcp",
+                 "FromPort": "22",
+                 "ToPort": "22",
+                 "CidrIp": "0.0.0.0/0"
+              }
+           ],
+           "SecurityGroupEgress": [
+              {
+                 "IpProtocol": -1,
+                 "CidrIp": "0.0.0.0/0"
+              }
+           ]
+        }
+     }
+    },
+    "Outputs": {
+		"VPC": {
+            "Description": "VPC ID",
+			"Value": {"Ref": "VPC"}
+        },
+        "SubnetA": {
+            "Description": "Subnet A ID",
+			"Value": {"Ref": "SubnetA"}
+        },
+        "SecurityGroup": {
+            "Description": "Security Group",
+			"Value": {"Ref": "SecurityGroup"}
+        }
+	}
+ }

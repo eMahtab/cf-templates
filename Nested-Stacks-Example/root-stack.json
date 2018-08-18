@@ -1,0 +1,71 @@
+{
+	"AWSTemplateFormatVersion": "2010-09-09",
+	"Description": "Root Stack which executes VPC and EC2 Nested Stacks",
+	"Parameters": {
+		"KeyName": {
+			"Description": "Key Pair name",
+			"Type": "AWS::EC2::KeyPair::KeyName"
+		},
+		"VPCCIDR": {
+			"Description": "CIDR of VPC to be created",
+			"Type": "String"
+		},
+		"SubnetCIDR": {
+			"Description": "CIDR of Subnet",
+			"Type": "String"
+        },
+        "InstanceType": {
+			"Description": "EC2 Instance Type",
+            "Type": "String",
+            "Default" : "t2.micro"
+		}
+	},
+	"Resources": {
+        "VPCStack": {
+			"Type" : "AWS::CloudFormation::Stack",
+			"Properties" : {
+				"Parameters" : {
+					"VPCCIDR": {"Ref": "VPCCIDR"},
+					"SubnetCIDR": {"Ref": "SubnetCIDR"}
+				},
+				"TemplateURL" : "https://s3.amazonaws.com/public-s3-data/vpc-stack.json",
+				"TimeoutInMinutes" : "6"
+			}
+		},
+		"EC2Stack": {
+			"Type" : "AWS::CloudFormation::Stack",
+			"Properties" : {
+				"Parameters" : {
+                    "SubnetId": {"Fn::GetAtt" : ["VPCStack", "Outputs.SubnetA"]},
+                    "SecurityGroup": {"Fn::GetAtt" : ["VPCStack", "Outputs.SecurityGroup"]},
+					"KeyName": {"Ref": "KeyName"},
+					"InstanceType": {"Ref": "InstanceType"}
+				},
+				"TemplateURL" : "https://s3.amazonaws.com/public-s3-data/ec2-stack.json",
+				"TimeoutInMinutes" : "5"
+			}
+		}
+	},
+	"Outputs": {
+        "VPC": {
+            "Description": "VPC",
+			"Value": {"Fn::GetAtt" : ["VPCStack", "Outputs.VPC"]}
+        },
+        "Subnet": {
+            "Description": "Subnet",
+			"Value": {"Fn::GetAtt" : ["VPCStack", "Outputs.SubnetA"]}
+        },
+		"InstanceId": {
+            "Description": "Instance ID of EC2 Instance",
+			"Value": {"Fn::GetAtt" : ["EC2Stack", "Outputs.InstanceId"]}
+		},
+		"PublicDNS": {
+            "Description": "DNS endpoint of EC2 Instance",
+			"Value": {"Fn::GetAtt" : ["EC2Stack", "Outputs.PublicDNS"]}
+        },
+        "PublicIP" : {
+            "Description" : "Public IP of EC2 instance",
+            "Value" : { "Fn::GetAtt" : [ "EC2Stack", "Outputs.PublicIP" ] }
+          }
+	}
+}
