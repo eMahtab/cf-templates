@@ -1,0 +1,42 @@
+{
+  "Description": "This CloudFormation template creates basic lambda execution Role",
+  "Resources": {
+  
+    "BasicLambdaExecutionRole" :{
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+            "AssumeRolePolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [{ "Effect": "Allow",
+                              "Principal": {"Service": ["lambda.amazonaws.com"]},
+                              "Action": ["sts:AssumeRole"] }]
+            },
+            "Path": "/",
+            "Policies": [{
+              "PolicyName" : "BasicLambdaExecutionPolicy",
+              "PolicyDocument" : {
+                 "Version": "2012-10-17",
+                 "Statement": [{
+                     "Effect": "Allow",
+                     "Action": [
+                      "logs:CreateLogGroup",
+                      "logs:CreateLogStream",
+                      "logs:PutLogEvents"
+                      ],
+                    "Resource": "arn:aws:logs:*:*:*"
+                }]
+              }
+           }]
+      }
+    }
+  },
+
+  "Outputs" : {
+    "BasicLambdaExecutionRole" : {
+      "Description" : "Basic Lambda Execution Role",
+      "Value" :  {"Fn::GetAtt" : ["BasicLambdaExecutionRole", "Arn"] },
+      "Export" : { "Name" : {"Fn::Sub": "${AWS::StackName}-BASIC:LAMBDA:EXECUTION:ROLE" }}
+    }
+  }
+
+}
