@@ -64,12 +64,7 @@
                 "InternetGatewayId": { "Ref": "InternetGateway"}
             }
         },
-        "EIP": {
-            "Type": "AWS::EC2::EIP",
-            "Properties": {
-                "Domain": "VPC"
-            }
-        },
+
         "PublicRouteTable": {
             "Type": "AWS::EC2::RouteTable",
             "Properties": {
@@ -209,14 +204,8 @@
             },
             "DependsOn": "LaunchConfig",
             "Properties": {
-                "VPCZoneIdentifier": [
-                    {
-                        "Ref": "PrivateSubnet1"
-                    }
-                ],
-                "LaunchConfigurationName": {
-                    "Ref": "LaunchConfig"
-                },
+                "VPCZoneIdentifier": [ { "Ref": "PrivateSubnet1" } ],
+                "LaunchConfigurationName": { "Ref": "LaunchConfig" },
                 "MinSize": "2",
                 "MaxSize": "4"
             }
@@ -240,11 +229,7 @@
                         ]
                     }
                 },
-                "SecurityGroups": [
-                    {
-                        "Ref": "EC2SecurityGroup"
-                    }
-                ],
+                "SecurityGroups": [ { "Ref": "EC2SecurityGroup" } ],
                 "InstanceType": "t2.micro"
             }
         }
