@@ -1,6 +1,21 @@
 {
     "AWSTemplateFormatVersion": "2010-09-09",
     "Description": "VPC with 2 public subnets and an Auto Scaling group",
+    "Parameters": {
+        "KeyName": {
+            "Description" : "Name of an existing EC2 KeyPair to enable SSH access to the instance",
+            "Type": "AWS::EC2::KeyPair::KeyName",
+            "ConstraintDescription" : "Must be the name of an existing EC2 KeyPair."
+          },
+        "ApplicationBucket": {
+            "Description": "Source bucket containing application code",
+            "Type": "String"
+        },
+        "BuildNumber": {
+            "Description": "Build version of the application",
+            "Type": "String"
+        }
+    },    
     "Mappings": {
         "SubnetConfig": {
             "VPC": { "CIDR": "10.0.0.0/16" },
@@ -9,6 +24,41 @@
         }
     },
     "Resources": {
+
+        "EC2S3AccessRole" :{
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                  "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [{ "Effect": "Allow",
+                                    "Principal": {"Service": ["ec2.amazonaws.com"]},
+                                    "Action": ["sts:AssumeRole"] }]
+                  },
+                  "Path": "/",
+                  "Policies": [{
+                    "PolicyName" : "S3FullAccess",
+                    "PolicyDocument" : {
+                       "Version": "2012-10-17",
+                       "Statement": [{
+                           "Effect": "Allow",
+                           "Action": [
+                            "s3:*"
+                            ],
+                          "Resource": "*"
+                      }]
+                    }
+                 }]
+            }
+        },
+
+        "EC2InstanceProfile": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties": {
+               "Path": "/",
+               "Roles": [ { "Ref": "EC2S3AccessRole" } ]
+            }
+        },
+
         "VPC": {
             "Type": "AWS::EC2::VPC",
             "Properties": {
@@ -25,7 +75,7 @@
             "Type": "AWS::EC2::Subnet",
             "Properties": {
                 "VpcId": { "Ref": "VPC" },
-                "AvailabilityZone": { "Fn::Select": [ "0", { "Fn::GetAZs": "" } ] },
+                "AvailabilityZone": "us-east-1a",
                 "CidrBlock": { "Fn::FindInMap": [ "SubnetConfig", "Public", "CIDR"] },
                 "Tags": [
                     { "Key": "Application", "Value": { "Ref": "AWS::StackName" } },
@@ -38,7 +88,7 @@
             "Type": "AWS::EC2::Subnet",
             "Properties": {
                 "VpcId": { "Ref": "VPC" },
-                "AvailabilityZone": { "Fn::Select": [ "1", { "Fn::GetAZs": "" }] },
+                "AvailabilityZone": "us-east-1b",
                 "CidrBlock": { "Fn::FindInMap": [ "SubnetConfig", "Public1", "CIDR"] },
                 "Tags": [
                     { "Key": "Application", "Value": { "Ref": "AWS::StackName" } },
@@ -184,54 +234,100 @@
                 ]
             }
         },
-        "SGBaseIngress": {
-            "Type": "AWS::EC2::SecurityGroupIngress",
+        "ELBSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
             "Properties": {
-                "GroupId": { "Ref": "EC2SecurityGroup" },
-                "IpProtocol": "tcp",
-                "FromPort": "80",
-                "ToPort": "80",
-                "SourceSecurityGroupId": { "Ref": "EC2SecurityGroup" }
+                "GroupDescription": "Enable access to the ELB on port 80",
+                "VpcId": { "Ref": "VPC" },
+                "SecurityGroupIngress": [
+                    { "IpProtocol": "tcp", "FromPort": "80", "ToPort": "80", "CidrIp": "0.0.0.0/0" }
+                ]
+            }
+        },
+
+        "LoadBalancer": {
+            "Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+            "Properties": {
+              "SecurityGroups" : [{ "Fn::GetAtt": [ "ELBSecurityGroup", "GroupId"] }],
+              "Scheme" : "internet-facing", 
+              "Subnets": [ { "Ref" : "PublicSubnet" }, { "Ref" : "PublicSubnet1" } ],
+              "Listeners": [
+                {
+                  "InstancePort": "80",
+                  "InstanceProtocol": "HTTP",
+                  "LoadBalancerPort": "80",
+                  "Protocol": "HTTP"
+                }
+              ],
+              "HealthCheck": {
+                "Target": "HTTP:80/index.html",
+                "Timeout": "5",
+                "Interval": "10",
+                "UnhealthyThreshold": "2",
+                "HealthyThreshold": "3"
+              }
             }
         },
         "WebServerGroup": {
             "Type": "AWS::AutoScaling::AutoScalingGroup",
             "UpdatePolicy": {
                 "AutoScalingRollingUpdate": {
-                    "MaxBatchSize": "4",
-                    "MinInstancesInService": "1"
+                    "MaxBatchSize": "1",
+                    "MinInstancesInService": "1",
+                    "WaitOnResourceSignals": "true",
+                    "PauseTime": "PT5M"
                 }
             },
             "DependsOn": "LaunchConfig",
             "Properties": {
-                "VPCZoneIdentifier": [ { "Ref": "PrivateSubnet1" } ],
+                "VPCZoneIdentifier": [{"Ref": "PublicSubnet"},{"Ref": "PublicSubnet1"}],
                 "LaunchConfigurationName": { "Ref": "LaunchConfig" },
-                "MinSize": "2",
-                "MaxSize": "4"
-            }
+                "MinSize": "1",
+                "DesiredCapacity": "4",
+                "MaxSize": "4",
+                "HealthCheckType": "ELB",
+                "HealthCheckGracePeriod": "120",
+                "LoadBalancerNames": [ { "Ref": "LoadBalancer" } ]
+            },
+            "CreationPolicy": {
+                "ResourceSignal": {
+                  "Count": 4,
+                  "Timeout": "PT10M"
+                }
+              }
         },
         "LaunchConfig": {
             "Type": "AWS::AutoScaling::LaunchConfiguration",
-            "DependsOn": "NATGateway",
             "Properties": {
-                "ImageId": "ami-0b33d91d",
+                "AssociatePublicIpAddress" : "true",
+                "ImageId": "ami-04681a1dbd79675a5",
+                "IamInstanceProfile": { "Ref": "EC2InstanceProfile" },
                 "UserData": {
                     "Fn::Base64": {
                         "Fn::Join": [
                             "",
                             [
-                                "#!/bin/bash\n",
+                                "#!/bin/bash -ex \n",
                                 "yum update -y\n",
                                 "yum install httpd -y\n",
                                 "service httpd start\n",
-                                "chkconfig httpd on"
+                                "chkconfig httpd on\n",
+                                "aws s3 cp s3://", {"Ref": "ApplicationBucket"},"/builds/", {"Ref": "BuildNumber"},"/index.html /var/www/html/index.html \n",
+                                "/opt/aws/bin/cfn-signal -e $? --region ", {"Ref": "AWS::Region"}, " --stack ", {"Ref": "AWS::StackName"}, " --resource WebServerGroup", "\n" 
                             ]
                         ]
                     }
                 },
-                "SecurityGroups": [ { "Ref": "EC2SecurityGroup" } ],
+                "SecurityGroups": [{"Ref": "EC2SecurityGroup"}],
+                "KeyName" : { "Ref" : "KeyName" },
                 "InstanceType": "t2.micro"
             }
         }
-    }
+    },
+    "Outputs": {
+        "ELB": {
+          "Value": {"Fn::Join": ["", ["http://", {"Fn::GetAtt": ["LoadBalancer", "DNSName"]}]]},
+          "Description": "Load Balancer URL"
+        }
+      }
 }
